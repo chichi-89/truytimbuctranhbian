@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Khởi Động Tiết Học - TRUY TÌM BỨC TRANH BÍ ẨN </title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- MediaPipe Hands & Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;600;700;800&display=swap');
+        body {
+            font-family: 'Lexend', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            color: #f8fafc;
+        }
+
+        .dust-canvas-container {
+            position: relative;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            border-radius: 1.5rem;
+            overflow: hidden;
+        }
+
+        #webcam-video {
+            transform: scaleX(-1);
+        }
+
+        .action-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .action-card.active {
+            border-color: #6366f1;
+            background: rgba(99, 102, 241, 0.2);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .action-card.completed {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.15);
+            opacity: 0.85;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 12px rgba(99, 102, 241, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+        }
+
+        .timer-badge {
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.5);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-4 md:p-6">
+
+    <!-- Header -->
+    <header class="text-center max-w-4xl mx-auto mb-4">
+        <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-indigo-500/20 border border-amber-500/30 text-amber-300 text-sm font-bold mb-2">
+            <i class="fa-solid fa-fire-flame-curved text-amber-400"></i> BẢO TÀNG BÍ ẨN • HOẠT ĐỘNG KHỞI ĐỘNG
+        </div>
+        <h1 class="text-2xl md:text-4xl font-extrabold tracking-tight text-white mb-1">
+            TRUY TÌM BỨC TRANH BÍ ẨN
+        </h1>
+        <p class="text-slate-400 text-sm md:text-base">
+            Mỗi thử thách cử chỉ diễn ra trong 10 giây. Hãy nhanh tay quét sạch lớp bụi để khám phá bí mật!
+        </p>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- Left: Interactive Picture & Webcam Container (8 cols) -->
+        <div class="lg:col-span-8 flex flex-col items-center">
+            
+            <div class="dust-canvas-container w-full aspect-[4/3] max-w-[800px] border-4 border-slate-700/50 bg-slate-900 relative">
+                
+                <!-- Underneath Image (Hidden Picture) -->
+                <img id="secret-image" 
+                     src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?q=80&w=1200&auto=format&fit=crop" 
+                     alt="Bức tranh bí mật" 
+                     class="absolute inset-0 w-full h-full object-cover">
+
+                <!-- Canvas Layer for Dust & Clearing Effect -->
+                <canvas id="dust-canvas" class="absolute inset-0 w-full h-full z-10"></canvas>
+
+                <!-- Hand Tracking Feedback Canvas -->
+                <canvas id="hand-canvas" class="absolute inset-0 w-full h-full z-20 pointer-events-none"></canvas>
+
+                <!-- Progress Bar Overlay -->
+                <div class="absolute top-4 left-4 right-4 z-30 bg-slate-900/80 backdrop-blur-md p-3 rounded-xl border border-slate-700 flex items-center justify-between">
+                    <div class="flex items-center gap-3 w-full mr-4">
+                        <i class="fa-solid fa-broom text-amber-400 text-lg"></i>
+                        <div class="w-full bg-slate-800 rounded-full h-3.5 overflow-hidden border border-slate-700">
+                            <div id="clean-progress" class="bg-gradient-to-r from-amber-500 via-indigo-500 to-emerald-400 h-full w-0 transition-all duration-500"></div>
+                        </div>
+                    </div>
+                    <span id="clean-percentage" class="text-lg font-bold font-mono text-amber-400 min-w-[50px] text-right">0%</span>
+                </div>
+
+                <!-- Active Step Countdown Timer Floating Overlay -->
+                <div id="timer-container" class="absolute top-20 right-4 z-30 hidden">
+                    <div class="timer-badge bg-amber-500 text-slate-950 font-extrabold text-xl px-4 py-2 rounded-2xl border-2 border-amber-300 flex items-center gap-2 animate-bounce">
+                        <i class="fa-solid fa-stopwatch animate-spin"></i>
+                        <span id="timer-text">10s</span>
+                    </div>
+                </div>
+
+                <!-- Status Banner -->
+                <div id="status-banner" class="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 bg-slate-900/90 border border-indigo-500/50 px-6 py-2.5 rounded-full text-sm font-semibold text-indigo-200 backdrop-blur-md flex items-center gap-3 shadow-xl max-w-[90%] text-center">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0"></span>
+                    <span id="status-text">Chọn hoặc tải tranh lên, sau đó bấm nút "Chơi (10s)" ở từng hành động!</span>
+                </div>
+
+                <!-- Video Element for MediaPipe (Hidden) -->
+                <video id="webcam-video" class="hidden" playsinline></video>
+            </div>
+
+            <!-- Toolbar / Control Panel for Teacher -->
+            <div class="mt-3 flex flex-wrap items-center justify-between gap-3 w-full max-w-[800px] bg-slate-800/40 p-2.5 rounded-xl border border-slate-700/50 text-xs text-slate-300">
+                <div class="flex items-center gap-2">
+                    <!-- Upload Custom Picture Input -->
+                    <label for="image-upload" class="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Tải tranh bài học lên
+                    </label>
+                    <input type="file" id="image-upload" accept="image/*" class="hidden">
+                    <span id="file-name" class="text-slate-400 italic text-[11px] truncate max-w-[150px]">Ảnh mặc định</span>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <button id="btn-reveal-picture" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition flex items-center gap-1">
+                        <i class="fa-solid fa-eye"></i> Hiện toàn bộ tranh
+                    </button>
+                    <button id="btn-show-question" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg transition flex items-center gap-1">
+                        <i class="fa-solid fa-circle-question"></i> Hiển thị câu hỏi
+                    </button>
+                    <button id="btn-reset" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition flex items-center gap-1">
+                        <i class="fa-solid fa-rotate-right"></i> Làm mới game
+                    </button>
+                </div>
+            </div>
+
+            <!-- Reflection Question Panel (Non-intrusive below canvas / side) -->
+            <div id="question-panel" class="mt-4 w-full max-w-[800px] bg-slate-900/90 border-2 border-amber-500/60 p-4 rounded-2xl shadow-xl hidden transition-all duration-300">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex items-center gap-2 text-amber-400 font-extrabold text-sm uppercase tracking-wider mb-2">
+                        <i class="fa-solid fa-lightbulb text-lg"></i> CÂU HỎI SUY NGẪM
+                    </div>
+                    <button id="btn-close-question" class="text-slate-400 hover:text-white text-lg">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <p class="text-slate-200 text-sm md:text-base italic leading-relaxed bg-indigo-950/40 p-3 rounded-xl border border-indigo-800/40">
+                    "Em hãy cho biết từ khóa của bức tranh này là gì?"
+                </p>
+            </div>
+        </div>
+
+        <!-- Right: 6 Actions Stepper Panel (4 cols) -->
+        <div class="lg:col-span-4 flex flex-col gap-2.5">
+            <h2 class="text-base font-bold text-slate-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+                <span>6 Thử Thách Cử Chỉ</span>
+                <span id="step-indicator" class="text-xs font-normal text-indigo-400 bg-indigo-950 px-2.5 py-1 rounded-full border border-indigo-800">Nhiệm vụ 1 / 6</span>
+            </h2>
+
+            <!-- Action 1 -->
+            <div id="action-1" class="action-card active border-2 border-slate-700 bg-slate-800/60 p-2.5 rounded-xl flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-indigo-600/30 text-indigo-400 flex items-center justify-center font-bold text-base shrink-0 border border-indigo-500/40">
+                    1
+                </div>
+                <div class="flex-grow">
+                    <h3 class="font-bold text-xs md:text-sm text-white">Xòe 5 ngón lau trung tâm</h3>
+                    <p class="text-[11px] text-slate-400">Quét sạch bụi vùng giữa tranh</p>
+                </div>
+                <button onclick="startActionTimer(1)" class="btn-start-action px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg shadow-md transition shrink-0 flex items-center gap-1">
+                    <i class="fa-solid fa-play"></i> Chơi (10s)
+                </button>
+            </div>
+
+            <!-- Action 2 -->
+            <div id="action-2" class="action-card border-2 border-slate-700 bg-slate-800/60 p-2.5 rounded-xl flex items-center gap-3 opacity-60">
+                <div class="w-9 h-9 rounded-lg bg-slate-700 text-slate-400 flex items-center justify-center font-bold text-base shrink-0">
+                    2
+                </div>
+                <div class="flex-grow">
+                    <h3 class="font-bold text-xs md:text-sm text-white">Nắm đấm "Bùng Nổ"</h3>
+                    <p class="text-[11px] text-slate-400">Xung lực thổi bay bụi góc trái</p>
+                </div>
+                <button onclick="startActionTimer(2)" disabled class="btn-start-action px-3 py-1.5 bg-slate-700 text-slate-400 font-bold text-xs rounded-lg transition shrink-0 flex items-center gap-1 cursor-not-allowed">
+                    <i class="fa-solid fa-lock"></i> Chơi (10s)
+                </button>
+            </div>
+
+            <!-- Action 3 -->
+            <div id="action-3" class="action-card border-2 border-slate-700 bg-slate-800/60 p-2.5 rounded-xl flex items-center gap-3 opacity-60">
+                <div class="w-9 h-9 rounded-lg bg-slate-700 text-slate-400 flex items-center justify-center font-bold text-base shrink-0">
+                    3
+                </div>
+                <div class="flex-grow">
+                    <h3 class="font-bold text-xs md:text-sm text-white">Giơ 2 ngón tay (Peace)</h3>
+                    <p class="text-[11px] text-slate-400">Kích hoạt làm sạch vùng hai bên</p>
+                </div>
+                <button onclick="startActionTimer(3)" disabled class="btn-start-action px-3 py-1.5 bg-slate-700 text-slate-400 font-bold text-xs rounded-lg transition shrink-0 flex items-center gap-1 cursor-not-allowed">
+                    <i class="fa-solid fa-lock"></i> Chơi (10s)
+                </button>
+            </div>
+
+            <!-- Action 4 -->
+            <div id="action-4" class="action-card border-2 border-slate-700 bg-slate-800/60 p-2.5 rounded-xl flex items-center gap-3 opacity-60">
+                <div class="w-9 h-9 rounded-lg bg-slate-700 text-slate-400 flex items-center justify-center font-bold text-base shrink-0">
+                    4
+                </div>
+                <div class="flex-grow">
+                    <h3 class="font-bold text-xs md:text-sm text-white">Chỉ tay "Điểm Nhấn"</h3>
+                    <p class="text-[11px] text-slate-400">Dùng ngón trỏ soi tỏ chi tiết chính</p>
+                </div>
+                <button onclick="startActionTimer(4)" disabled class="btn-start-action px-3 py-1.5 bg-slate-700 text-slate-400 font-bold text-xs rounded-lg transition shrink-0 flex items-center gap-1 cursor-not-allowed">
+                    <i class="fa-solid fa-lock"></i> Chơi (10s)
+                </button>
+            </div>
+
+            <!-- Action 5 -->
+            <div id="action-5" class="action-card border-2 border-slate-700 bg-slate-800/60 p-2.5 rounded-xl flex items-center gap-3 opacity-60">
+                <div class="w-9 h-9 rounded-lg bg-slate-700 text-slate-400 flex items-center justify-center font-bold text-base shrink-0">
+                    5
+                </div>
+                <div class="flex-grow">
+                    <h3 class="font-bold text-xs md:text-sm text-white">Vẫy tay gạt bụi</h3>
+                    <p class="text-[11px] text-slate-400">Di chuyển tay lau diện rộng</p>
+                </div>
+                <button onclick="startActionTimer(5)" disabled class="btn-start-action px-3 py-1.5 bg-slate-700 text-slate-400 font-bold text-xs rounded-lg transition shrink-0 flex items-center gap-1 cursor-not-allowed">
+                    <i class="fa-solid fa-lock"></i> Chơi (10s)
+                </button>
+            </div>
+
+            <!-- Action 6 -->
+            <div id="action-6" class="action-card border-2 border-slate-700 bg-slate-800/60 p-2.5 rounded-xl flex items-center gap-3 opacity-60">
+                <div class="w-9 h-9 rounded-lg bg-slate-700 text-slate-400 flex items-center justify-center font-bold text-base shrink-0">
+                    6
+                </div>
+                <div class="flex-grow">
+                    <h3 class="font-bold text-xs md:text-sm text-white">Bắn tim / Vỗ tay bùng nổ</h3>
+                    <p class="text-[11px] text-slate-400">Thổi sạch toàn bộ lượng bụi còn lại</p>
+                </div>
+                <button onclick="startActionTimer(6)" disabled class="btn-start-action px-3 py-1.5 bg-slate-700 text-slate-400 font-bold text-xs rounded-lg transition shrink-0 flex items-center gap-1 cursor-not-allowed">
+                    <i class="fa-solid fa-lock"></i> Chơi (10s)
+                </button>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center text-xs text-slate-500 mt-4">
+        Game Tương Tác Cử Chỉ AI • Khởi Động Tiết Học Sôi Nổi
+    </footer>
+
+    <!-- Game Logic, Web Audio API & MediaPipe Logic -->
+    <script>
+        // DOM Elements
+        const dustCanvas = document.getElementById('dust-canvas');
+        const dustCtx = dustCanvas.getContext('2d');
+        const handCanvas = document.getElementById('hand-canvas');
+        const handCtx = handCanvas.getContext('2d');
+        const videoElement = document.getElementById('webcam-video');
+        const cleanProgress = document.getElementById('clean-progress');
+        const cleanPercentage = document.getElementById('clean-percentage');
+        const statusText = document.getElementById('status-text');
+        const stepIndicator = document.getElementById('step-indicator');
+        const btnReset = document.getElementById('btn-reset');
+        const btnRevealPicture = document.getElementById('btn-reveal-picture');
+        const btnShowQuestion = document.getElementById('btn-show-question');
+        const questionPanel = document.getElementById('question-panel');
+        const btnCloseQuestion = document.getElementById('btn-close-question');
+        const imageUpload = document.getElementById('image-upload');
+        const secretImage = document.getElementById('secret-image');
+        const fileNameSpan = document.getElementById('file-name');
+        const timerContainer = document.getElementById('timer-container');
+        const timerText = document.getElementById('timer-text');
+
+        // State variables
+        let currentStep = 1;
+        let isDrawing = false;
+        let isCompleted = false;
+        let activeTimer = null;
+        let isTimerRunning = false;
+        let countdown = 10;
+
+        // Sound Synthesis using Web Audio API
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new AudioContext();
+            }
+        }
+
+        function playTickSound() {
+            try {
+                initAudio();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.08);
+            } catch (e) {}
+        }
+
+        function playFinishStepSound() {
+            try {
+                initAudio();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+                osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.3); // A5
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.3);
+            } catch (e) {}
+        }
+
+        // Upload custom image handler
+        imageUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                fileNameSpan.innerText = file.name;
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    secretImage.src = evt.target.result;
+                    resetGame();
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Initialize Canvas Dust Pattern
+        function initDustCanvas() {
+            dustCanvas.width = dustCanvas.offsetWidth;
+            dustCanvas.height = dustCanvas.offsetHeight;
+            handCanvas.width = dustCanvas.offsetWidth;
+            handCanvas.height = dustCanvas.offsetHeight;
+
+            // Fill Canvas with Dust Texture
+            dustCtx.fillStyle = '#334155';
+            dustCtx.fillRect(0, 0, dustCanvas.width, dustCanvas.height);
+
+            for (let i = 0; i < 6000; i++) {
+                const x = Math.random() * dustCanvas.width;
+                const y = Math.random() * dustCanvas.height;
+                const radius = Math.random() * 3 + 1;
+                dustCtx.fillStyle = Math.random() > 0.5 ? '#1e293b' : '#475569';
+                dustCtx.beginPath();
+                dustCtx.arc(x, y, radius, 0, Math.PI * 2);
+                dustCtx.fill();
+            }
+
+            dustCtx.font = 'bold 22px Lexend';
+            dustCtx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+            dustCtx.textAlign = 'center';
+            dustCtx.fillText('BẤM "CHƠI (10S)" ĐỂ BẮT ĐẦU LAU BỤI', dustCanvas.width / 2, dustCanvas.height / 2);
+        }
+
+        // Wipe dust function at specific coordinates
+        function wipeDust(x, y, radius = 45) {
+            if (!isTimerRunning && !isCompleted) return;
+
+            dustCtx.globalCompositeOperation = 'destination-out';
+            dustCtx.beginPath();
+            dustCtx.arc(x, y, radius, 0, Math.PI * 2);
+            dustCtx.fill();
+            dustCtx.globalCompositeOperation = 'source-over';
+
+            updateProgress();
+        }
+
+        // Calculate Cleaned Percentage
+        function updateProgress() {
+            const imgData = dustCtx.getImageData(0, 0, dustCanvas.width, dustCanvas.height);
+            let pixels = imgData.data;
+            let transparentPixels = 0;
+
+            for (let i = 3; i < pixels.length; i += 16) {
+                if (pixels[i] === 0) {
+                    transparentPixels++;
+                }
+            }
+
+            const totalSampled = pixels.length / 16;
+            const percent = Math.min(100, Math.round((transparentPixels / totalSampled) * 100));
+
+            cleanProgress.style.width = percent + '%';
+            cleanPercentage.innerText = percent + '%';
+        }
+
+        // Start Countdown Timer for specific Action
+        function startActionTimer(stepNumber) {
+            if (stepNumber !== currentStep || isCompleted) return;
+
+            initAudio();
+            clearInterval(activeTimer);
+            
+            countdown = 10;
+            isTimerRunning = true;
+            timerContainer.classList.remove('hidden');
+            timerText.innerText = countdown + 's';
+
+            statusText.innerText = `⏱ Đang tính giờ Thử thách ${stepNumber}! Học sinh hãy tương tác nhanh!`;
+
+            activeTimer = setInterval(() => {
+                countdown--;
+                timerText.innerText = countdown + 's';
+                playTickSound();
+
+                if (countdown <= 0) {
+                    clearInterval(activeTimer);
+                    isTimerRunning = false;
+                    timerContainer.classList.add('hidden');
+                    playFinishStepSound();
+
+                    // Advance to next step
+                    advanceStep(currentStep + 1);
+                }
+            }, 1000);
+        }
+
+        // Advance Game Steps
+        function advanceStep(nextStep) {
+            // Update Current Completed Card
+            const prevCard = document.getElementById(`action-${currentStep}`);
+            if (prevCard) {
+                prevCard.classList.remove('active');
+                prevCard.classList.add('completed');
+                const btn = prevCard.querySelector('.btn-start-action');
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> Xong';
+                btn.disabled = true;
+                btn.className = 'btn-start-action px-3 py-1.5 bg-emerald-600 text-white font-bold text-xs rounded-lg shrink-0 cursor-default';
+            }
+
+            if (nextStep > 6) {
+                finishAllActions();
+                return;
+            }
+
+            currentStep = nextStep;
+            stepIndicator.innerText = `Nhiệm vụ ${currentStep} / 6`;
+
+            // Activate Next Card
+            const nextCard = document.getElementById(`action-${nextStep}`);
+            if (nextCard) {
+                nextCard.classList.remove('opacity-60');
+                nextCard.classList.add('active');
+                const btn = nextCard.querySelector('.btn-start-action');
+                btn.disabled = false;
+                btn.className = 'btn-start-action px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg shadow-md transition shrink-0 flex items-center gap-1 cursor-pointer';
+                btn.innerHTML = '<i class="fa-solid fa-play"></i> Chơi (10s)';
+            }
+
+            statusText.innerText = `Sẵn sàng thử thách ${currentStep}! Bấm nút "Chơi (10s)" để kích hoạt!`;
+        }
+
+        // Called when 6 actions are completed (keep current dust state as requested)
+        function finishAllActions() {
+            isCompleted = true;
+            isTimerRunning = false;
+            clearInterval(activeTimer);
+            timerContainer.classList.add('hidden');
+            stepIndicator.innerText = `Hoàn thành 6/6`;
+
+            statusText.innerText = "🎉 Đã hoàn thành 6 hành động! Giáo viên có thể bấm 'Hiện toàn bộ tranh' hoặc 'Hiển thị câu hỏi'.";
+            playFinishStepSound();
+        }
+
+        // Reveal Picture Completely
+        function revealFullPicture() {
+            dustCtx.clearRect(0, 0, dustCanvas.width, dustCanvas.height);
+            cleanProgress.style.width = '100%';
+            cleanPercentage.innerText = '100%';
+            statusText.innerText = "✨ Bức tranh đã được hiển thị trọn vẹn!";
+            playFinishStepSound();
+        }
+
+        // Toggle Question Panel
+        function toggleQuestionPanel(show) {
+            if (show) {
+                questionPanel.classList.remove('hidden');
+            } else {
+                questionPanel.classList.add('hidden');
+            }
+        }
+
+        function resetGame() {
+            isCompleted = false;
+            isTimerRunning = false;
+            clearInterval(activeTimer);
+            timerContainer.classList.add('hidden');
+            questionPanel.classList.add('hidden');
+            currentStep = 1;
+            
+            initDustCanvas();
+            cleanProgress.style.width = '0%';
+            cleanPercentage.innerText = '0%';
+            stepIndicator.innerText = `Nhiệm vụ 1 / 6`;
+
+            // Reset UI Action Cards
+            for (let i = 1; i <= 6; i++) {
+                const card = document.getElementById(`action-${i}`);
+                const btn = card.querySelector('.btn-start-action');
+                card.classList.remove('active', 'completed');
+                
+                if (i === 1) {
+                    card.classList.add('active');
+                    card.classList.remove('opacity-60');
+                    btn.disabled = false;
+                    btn.className = 'btn-start-action px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg shadow-md transition shrink-0 flex items-center gap-1 cursor-pointer';
+                    btn.innerHTML = '<i class="fa-solid fa-play"></i> Chơi (10s)';
+                } else {
+                    card.classList.add('opacity-60');
+                    btn.disabled = true;
+                    btn.className = 'btn-start-action px-3 py-1.5 bg-slate-700 text-slate-400 font-bold text-xs rounded-lg transition shrink-0 flex items-center gap-1 cursor-not-allowed';
+                    btn.innerHTML = '<i class="fa-solid fa-lock"></i> Chơi (10s)';
+                }
+            }
+
+            statusText.innerText = 'Bấm "Chơi (10s)" ở Thử thách 1 để bắt đầu đếm ngược!';
+        }
+
+        // Mouse interaction fallback
+        dustCanvas.addEventListener('mousedown', () => isDrawing = true);
+        dustCanvas.addEventListener('mouseup', () => isDrawing = false);
+        dustCanvas.addEventListener('mousemove', (e) => {
+            if (isDrawing) {
+                const rect = dustCanvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                wipeDust(x, y, 40);
+            }
+        });
+
+        // MediaPipe Hands Integration
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults((results) => {
+            handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    const indexTip = landmarks[8];
+                    const x = (1 - indexTip.x) * handCanvas.width;
+                    const y = indexTip.y * handCanvas.height;
+
+                    // Pointer animation
+                    handCtx.beginPath();
+                    handCtx.arc(x, y, 14, 0, Math.PI * 2);
+                    handCtx.fillStyle = isTimerRunning ? '#f59e0b' : '#6366f1';
+                    handCtx.shadowBlur = 15;
+                    handCtx.shadowColor = isTimerRunning ? '#f59e0b' : '#6366f1';
+                    handCtx.fill();
+
+                    let radius = 45;
+                    if (currentStep === 2) radius = 65;
+                    if (currentStep === 5) radius = 55;
+
+                    wipeDust(x, y, radius);
+                }
+            }
+        });
+
+        // Start Camera
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start().then(() => {
+            statusText.innerText = "Camera đã mở thành công! Hãy chọn bài học & bắt đầu thử thách!";
+        }).catch(() => {
+            statusText.innerText = "Không tìm thấy Camera. Bạn vẫn có thể dùng chuột tương tác!";
+        });
+
+        window.addEventListener('resize', initDustCanvas);
+        btnReset.addEventListener('click', resetGame);
+        btnRevealPicture.addEventListener('click', revealFullPicture);
+        btnShowQuestion.addEventListener('click', () => toggleQuestionPanel(true));
+        btnCloseQuestion.addEventListener('click', () => toggleQuestionPanel(false));
+
+        window.onload = () => {
+            initDustCanvas();
+        };
+    </script>
+</body>
+</html>
